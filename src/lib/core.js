@@ -9,7 +9,7 @@ import * as Detect from '@/lib/utils/ai/detections'
 /*
  * SIMPLIFIED CORE SYSTEM:
  * - Basic face tracking and glasses positioning
- * - Simple scaling based on device dimensions and base multiplier
+ * - Robust scaling that works across all devices and face sizes
  * - Manual Y rotation override only
  * - Ear anchoring for realistic glasses positioning
  * - No complex features or settings
@@ -28,7 +28,7 @@ face_landmarker,
 results
 let mode = 'VIDEO'
 let GENERAL = {
-  settings: false,
+  settings: true,
 }
 
 // Variables for sunglasses positioning
@@ -148,19 +148,43 @@ function add_model () {
   }
 }
 
-// Simplified scaling function - only uses base multiplier
-function calculateSimpleScale(eyeDistance, videoWidth, videoHeight) {
-  // Basic device scaling based on video dimensions
+// Robust scaling function that works across all devices
+function calculateRobustScale(eyeDistance, videoWidth, videoHeight) {
+  // Base scale from settings
+  let finalScale = settings_glasses.baseScaleMultiplier || 2.4
+  
+  // 1. DEVICE-ADAPTIVE SCALING: Adjust based on screen/video dimensions
+  // Standard reference: 640x480 = scale 1.0
   const standardWidth = 640
   const standardHeight = 480
   
-  // Calculate device scale factor
+  // Calculate scale factors for width and height
   const widthScale = videoWidth / standardWidth
   const heightScale = videoHeight / standardHeight
+  
+  // Use the smaller scale factor to prevent glasses from being too large
   const deviceScale = Math.min(widthScale, heightScale)
   
-  // Apply base multiplier and device scaling
-  const finalScale = (settings_glasses.baseScaleMultiplier || 1.5) * deviceScale
+  // Apply device scaling with smart limits
+  const deviceScaleFactor = Math.max(0.3, Math.min(2.5, deviceScale))
+  finalScale *= deviceScaleFactor
+  
+  // 2. FACE-PROPORTIONAL SCALING: Adjust based on actual face measurements
+  if (eyeDistance) {
+    // Normalize eye distance to a reasonable range
+    // Standard reference: 0.3 = scale 1.0
+    const standardEyeDistance = 0.3
+    const faceScaleFactor = eyeDistance / standardEyeDistance
+    
+    // Apply face scaling with limits
+    const clampedFaceScale = Math.max(0.6, Math.min(1.8, faceScaleFactor))
+    finalScale *= clampedFaceScale
+  }
+  
+  // 3. APPLY SMART LIMITS to prevent extreme sizes
+  const minScale = 0.3
+  const maxScale = 5.0
+  finalScale = Math.max(minScale, Math.min(maxScale, finalScale))
   
   return finalScale
 }
@@ -173,11 +197,11 @@ function settings () {
   let sunglassesFolder = gui.addFolder('Sunglasses Positioning')
   
   // Base scale multiplier control
-  sunglassesFolder.add(settings_glasses, 'baseScaleMultiplier', 0.1, 3.0, 0.1).name('Base Scale Multiplier').onChange(function(value) {
+  sunglassesFolder.add(settings_glasses, 'baseScaleMultiplier', 0.1, 5.0, 0.1).name('Base Scale Multiplier').onChange(function(value) {
     console.log('Base scale multiplier:', value)
     if (sunglassesModel && lastValidPosition) {
       // Recalculate scale with new multiplier
-      const newScale = calculateSimpleScale(
+      const newScale = calculateRobustScale(
         lastValidPosition.eyeDistance || 0.3, 
         video ? video.videoWidth : 640, 
         video ? video.videoHeight : 480
@@ -374,23 +398,23 @@ function position_sunglasses_on_eyes(landmarks) {
     let sceneZ = centerZ * 20 - 2
     const finalDepthOffset = 1 // Fixed depth offset
     
-    // Calculate simple scale based on device dimensions and base multiplier
-    const simpleScale = calculateSimpleScale(eyeDistance, video.videoWidth, video.videoHeight)
+         // Calculate robust scale that works across all devices
+     const robustScale = calculateRobustScale(eyeDistance, video.videoWidth, video.videoHeight)
     
-    // Store valid position for debugging
-    lastValidPosition = {
-      x: sceneX,
-      y: sceneY,
-      z: sceneZ - finalDepthOffset,
-      scale: simpleScale, // Use simple scale
-      eyeDistance: eyeDistance, // Store eye distance for scaling recalculation
-      tilt: headTilt,
-      yaw: headYaw,
-      naturalRoll: naturalRoll,
-      autoYaw: autoYaw,
-      autoPitch: autoPitch,
-      autoRoll: autoRoll
-    }
+         // Store valid position for debugging
+     lastValidPosition = {
+       x: sceneX,
+       y: sceneY,
+       z: sceneZ - finalDepthOffset,
+       scale: robustScale, // Use robust scale
+       eyeDistance: eyeDistance, // Store eye distance for scaling recalculation
+       tilt: headTilt,
+       yaw: headYaw,
+       naturalRoll: naturalRoll,
+       autoYaw: autoYaw,
+       autoPitch: autoPitch,
+       autoRoll: autoRoll
+     }
     
     // Position sunglasses with stable depth
     sunglassesModel.position.set(
@@ -399,8 +423,8 @@ function position_sunglasses_on_eyes(landmarks) {
       sceneZ - finalDepthOffset
     )
     
-    // Scale sunglasses using simple scaling system
-    sunglassesModel.scale.setScalar(simpleScale)
+         // Scale sunglasses using robust scaling system
+     sunglassesModel.scale.setScalar(robustScale)
     
     // Only Y rotation from manual override is used
     const manualRotationY = settings_glasses ? settings_glasses.sunglassesRotationY : 0
