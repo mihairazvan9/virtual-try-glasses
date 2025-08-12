@@ -28,7 +28,7 @@ face_landmarker,
 results
 let mode = 'VIDEO'
 let GENERAL = {
-  settings: true,
+  settings: false,
 }
 
 // Variables for sunglasses positioning
@@ -39,7 +39,7 @@ let lastValidPosition = null
 // Simplified settings object - only essential controls
 let settings_glasses = {
   // Base scale multiplier for all scaling calculations
-  baseScaleMultiplier: 2.4,
+  baseScaleMultiplier: 3.9,
   // Manual rotation override - Y rotation only
   sunglassesRotationY: 1.25,
   // Ear anchoring controls
