@@ -30,7 +30,7 @@ import Preview3D from './components/Preview3D.vue'
     align-content: center;
     width: 100dvw;
     height: 100dvh;
-    background-color: #000;
+    background-color: #212121;
 
     .wrapper-canvas {
       border-radius: 16px;

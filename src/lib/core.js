@@ -20,6 +20,13 @@ import * as Detect from '@/lib/utils/ai/detections'
  * - Configurable strength (0 = no compensation, 1 = full compensation)
  * - Only activates when significant roll is detected (> 0.01 radians)
  * - Keeps glasses centered during head tilt for natural appearance
+ * 
+ * DYNAMIC SCALING SYSTEM:
+ * - Automatically adjusts glasses size based on device and face characteristics
+ * - Device-adaptive scaling: Adjusts based on screen/video dimensions
+ * - Face-proportional scaling: Adjusts based on actual face measurements
+ * - Smart limits: Prevents glasses from being too small or too large
+ * - Works across different devices, screen sizes, and face proportions
  */
 
 
@@ -79,6 +86,13 @@ let lastValidPosition = null
     // Ear anchoring controls
     earAnchored: true, // Enable full ear anchoring (temple piece sticks to ear)
     earAttachmentOffset: 0.8, // Distance from ear to front of glasses (temple piece length)
+    // DYNAMIC SCALING SYSTEM - NEW FEATURE
+    dynamicScalingEnabled: true, // Enable automatic scaling based on device and face size
+    deviceAdaptiveScaling: true, // Scale based on screen dimensions
+    faceProportionalScaling: true, // Scale based on actual face measurements
+    minScale: 0.5, // Minimum scale factor (prevents glasses from being too small)
+    maxScale: 3.0, // Maximum scale factor (prevents glasses from being too large)
+    baseScaleMultiplier: 1.0, // Base multiplier for all scaling calculations
     debugMode: false
   }
 
@@ -202,6 +216,85 @@ function add_model () {
   }
 }
 
+// NEW FUNCTION: Calculate dynamic scaling based on device and face characteristics
+function calculateDynamicScale(eyeDistance, videoWidth, videoHeight) {
+  if (!settings_glasses || !settings_glasses.dynamicScalingEnabled) {
+    return settings_glasses ? settings_glasses.sunglassesScale : 0.6
+  }
+  
+  let finalScale = settings_glasses.baseScaleMultiplier || 1.0
+  
+  // 1. DEVICE-ADAPTIVE SCALING: Adjust based on screen/video dimensions
+  if (settings_glasses.deviceAdaptiveScaling) {
+    // Calculate device scale factor based on video dimensions
+    // Standard reference: 640x480 = scale 1.0
+    const standardWidth = 640
+    const standardHeight = 480
+    
+    // Calculate scale factors for width and height
+    const widthScale = videoWidth / standardWidth
+    const heightScale = videoHeight / standardHeight
+    
+    // Use the smaller scale factor to prevent glasses from being too large
+    const deviceScale = Math.min(widthScale, heightScale)
+    
+    // Apply device scaling with limits
+    const deviceScaleFactor = Math.max(0.5, Math.min(2.0, deviceScale))
+    finalScale *= deviceScaleFactor
+    
+    if (settings_glasses.debugMode) {
+      console.log('Device scaling:', {
+        videoWidth, videoHeight,
+        widthScale: widthScale.toFixed(3),
+        heightScale: heightScale.toFixed(3),
+        deviceScale: deviceScale.toFixed(3),
+        deviceScaleFactor: deviceScaleFactor.toFixed(3)
+      })
+    }
+  }
+  
+  // 2. FACE-PROPORTIONAL SCALING: Adjust based on actual face measurements
+  if (settings_glasses.faceProportionalScaling && eyeDistance) {
+    // Normalize eye distance to a reasonable range
+    // Standard reference: 0.3 = scale 1.0
+    const standardEyeDistance = 0.3
+    const faceScaleFactor = eyeDistance / standardEyeDistance
+    
+    // Apply face scaling with limits
+    const clampedFaceScale = Math.max(0.7, Math.min(1.5, faceScaleFactor))
+    finalScale *= clampedFaceScale
+    
+    if (settings_glasses.debugMode) {
+      console.log('Face scaling:', {
+        eyeDistance: eyeDistance.toFixed(4),
+        standardEyeDistance,
+        faceScaleFactor: faceScaleFactor.toFixed(3),
+        clampedFaceScale: clampedFaceScale.toFixed(3)
+      })
+    }
+  }
+  
+  // 3. APPLY MIN/MAX LIMITS
+  const minScale = settings_glasses.minScale || 0.5
+  const maxScale = settings_glasses.maxScale || 3.0
+  finalScale = Math.max(minScale, Math.min(maxScale, finalScale))
+  
+  // 4. APPLY BASE SCALE FROM SETTINGS
+  finalScale *= (settings_glasses.sunglassesScale || 0.6)
+  
+  if (settings_glasses.debugMode) {
+    console.log('Final dynamic scale calculation:', {
+      baseScale: settings_glasses.sunglassesScale,
+      finalScale: finalScale.toFixed(3),
+      minScale, maxScale,
+      deviceAdaptive: settings_glasses.deviceAdaptiveScaling,
+      faceProportional: settings_glasses.faceProportionalScaling
+    })
+  }
+  
+  return finalScale
+}
+
 
 
 
@@ -211,11 +304,45 @@ function settings () {
 
   // Sunglasses positioning controls
   let sunglassesFolder = gui.addFolder('Sunglasses Positioning')
+  // Dynamic scaling controls
+  let scalingFolder = sunglassesFolder.addFolder('Dynamic Scaling')
+  scalingFolder.add(settings_glasses, 'dynamicScalingEnabled').name('Enable Dynamic Scaling').onChange(function(value) {
+    console.log('Dynamic scaling:', value ? 'enabled' : 'disabled')
+  })
+  
+  scalingFolder.add(settings_glasses, 'deviceAdaptiveScaling').name('Device Adaptive').onChange(function(value) {
+    console.log('Device adaptive scaling:', value ? 'enabled' : 'disabled')
+  })
+  
+  scalingFolder.add(settings_glasses, 'faceProportionalScaling').name('Face Proportional').onChange(function(value) {
+    console.log('Face proportional scaling:', value ? 'enabled' : 'disabled')
+  })
+  
+  scalingFolder.add(settings_glasses, 'baseScaleMultiplier', 0.1, 3.0, 0.1).name('Base Multiplier').onChange(function(value) {
+    console.log('Base scale multiplier:', value)
+  })
+  
+  scalingFolder.add(settings_glasses, 'minScale', 0.1, 2.0, 0.1).name('Min Scale').onChange(function(value) {
+    console.log('Minimum scale:', value)
+  })
+  
+  scalingFolder.add(settings_glasses, 'maxScale', 1.0, 5.0, 0.1).name('Max Scale').onChange(function(value) {
+    console.log('Maximum scale:', value)
+  })
+  
+  scalingFolder.open()
+  
   sunglassesFolder.add(settings_glasses, 'sunglassesScale', 0.1, 5.0, 0.1).name('Base Scale').onChange(function(value) {
     if (sunglassesModel) {
       // Update scale if sunglasses are visible
       if (sunglassesModel.visible && lastValidPosition) {
-        sunglassesModel.scale.setScalar(value * (lastValidPosition.scale / 0.6))
+        // Recalculate dynamic scale with new base scale
+        const newDynamicScale = calculateDynamicScale(
+          lastValidPosition.eyeDistance || 0.3, 
+          video ? video.videoWidth : 640, 
+          video ? video.videoHeight : 480
+        )
+        sunglassesModel.scale.setScalar(newDynamicScale)
       }
     }
   })
@@ -675,6 +802,9 @@ function position_sunglasses_on_eyes(landmarks) {
     const baseScale = settings_glasses ? settings_glasses.sunglassesScale : 0.6
     const baseDepthOffset = settings_glasses ? settings_glasses.sunglassesDepth : 1
     
+    // Calculate dynamic scale based on device and face characteristics
+    const dynamicScale = calculateDynamicScale(eyeDistance, video.videoWidth, video.videoHeight)
+    
     // Calculate dynamic depth offset based on head rotation
     // More rotation = closer to eyes (smaller Z offset)
     let finalDepthOffset = baseDepthOffset
@@ -692,7 +822,8 @@ function position_sunglasses_on_eyes(landmarks) {
       x: sceneX,
       y: sceneY,
       z: sceneZ - finalDepthOffset,
-      scale: baseScale * (eyeDistance / 0.3), // Normalize to reasonable range
+      scale: dynamicScale, // Use dynamic scale instead of fixed calculation
+      eyeDistance: eyeDistance, // Store eye distance for dynamic scaling recalculation
       tilt: headTilt,
       yaw: headYaw,
       naturalRoll: naturalRoll,
@@ -708,9 +839,8 @@ function position_sunglasses_on_eyes(landmarks) {
       sceneZ - finalDepthOffset
     )
     
-    // Scale sunglasses based on eye distance
-    const scaleFactor = eyeDistance / 0.3 // Normalize scale factor
-    sunglassesModel.scale.setScalar(baseScale * scaleFactor)
+    // Scale sunglasses using dynamic scaling system
+    sunglassesModel.scale.setScalar(dynamicScale)
     
     // Apply manual rotation adjustments from GUI settings
     const manualRotationX = settings_glasses ? settings_glasses.sunglassesRotationX : 0
