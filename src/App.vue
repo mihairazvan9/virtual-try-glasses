@@ -23,6 +23,21 @@ import Preview3D from './components/Preview3D.vue'
     margin: 0;
     padding: 0;
   }
+
+  .wrapper {
+    display: flex;
+    justify-content: center;
+    align-content: center;
+    width: 100dvw;
+
+    .wrapper-canvas {
+      border-radius: 16px;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+    }
+  }
+
   #loading {
     position: absolute;
     top: 50%;
@@ -33,10 +48,10 @@ import Preview3D from './components/Preview3D.vue'
   @media screen and (min-width: 576px) {
     .wrapper {
 
-      display: flex;
-      justify-content: center;
-      align-content: center;
-      width: 100dvw;
+      // display: flex;
+      // justify-content: center;
+      // align-content: center;
+      // width: 100dvw;
 
       .wrapper-canvas {
         border-radius: 16px;

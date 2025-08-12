@@ -36,7 +36,7 @@ face_landmarker,
 results
 let mode = 'VIDEO'
 let GENERAL = {
-  settings: true,
+  settings: false,
 }
 
 
