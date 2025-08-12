@@ -92,7 +92,7 @@ let lastValidPosition = null
     faceProportionalScaling: true, // Scale based on actual face measurements
     minScale: 0.5, // Minimum scale factor (prevents glasses from being too small)
     maxScale: 3.0, // Maximum scale factor (prevents glasses from being too large)
-    baseScaleMultiplier: 1.0, // Base multiplier for all scaling calculations
+    baseScaleMultiplier: 1.5, // Base multiplier for all scaling calculations
     debugMode: false
   }
 
