@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Test – Glasses with MediaPipe + three.js</title>
+  <style>
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      background: #000; 
+      font-family: Arial, sans-serif;
+    }
+    #wrap { 
+      position: relative; 
+      width: 100vw; 
+      height: 100vh; 
+    }
+    video, canvas { 
+      position: absolute; 
+      inset: 0; 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover; 
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 18px;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="three"></canvas>
+    <div id="info">
+      <h3>MediaPipe + Three.js Glasses Try-On</h3>
+      <p>Move your head to see the glasses follow</p>
+      <p>Check console for settings GUI</p>
+    </div>
+    <div id="loading">Loading...</div>
+  </div>
+
+  <!-- three.js & loaders -->
+  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.159.0/examples/js/loaders/GLTFLoader.js"></script>
+
+  <!-- MediaPipe Tasks Vision (Face Landmarker) -->
+  <script src="https://unpkg.com/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+
+  <script type="module" src="./test-app.js"></script>
+</body>
+</html>
+

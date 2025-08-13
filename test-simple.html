@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simple Test – MediaPipe + Three.js</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    #wrap { position: relative; width: 100vw; height: 100vh; }
+    video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #info { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.7); padding: 10px; z-index: 1000; }
+    #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 18px; z-index: 1000; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="three"></canvas>
+    <div id="info">
+      <h3>Simple MediaPipe + Three.js Test</h3>
+      <p>Check console for status</p>
+    </div>
+    <div id="loading">Loading...</div>
+  </div>
+
+  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+
+  <script>
+    // Simple test to verify MediaPipe and Three.js work
+    console.log('Starting simple test...');
+    
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('three');
+    const loading = document.getElementById('loading');
+    
+    // Test Three.js
+    try {
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      
+      const geometry = new THREE.BoxGeometry();
+      const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+      const cube = new THREE.Mesh(geometry, material);
+      scene.add(cube);
+      
+      camera.position.z = 5;
+      
+      function animate() {
+        requestAnimationFrame(animate);
+        cube.rotation.x += 0.01;
+        cube.rotation.y += 0.01;
+        renderer.render(scene, camera);
+      }
+      
+      animate();
+      console.log('✅ Three.js working');
+    } catch (error) {
+      console.error('❌ Three.js error:', error);
+    }
+    
+    // Test camera
+    async function testCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        console.log('✅ Camera working');
+      } catch (error) {
+        console.error('❌ Camera error:', error);
+        loading.textContent = 'Camera error: ' + error.message;
+      }
+    }
+    
+    testCamera();
+    
+    // Test MediaPipe
+    async function testMediaPipe() {
+      try {
+        const { FaceLandmarker, FilesetResolver } = await import('https://unpkg.com/@mediapipe/tasks-vision/vision_bundle.mjs');
+        console.log('✅ MediaPipe imported');
+        
+        const fileset = await FilesetResolver.forVisionTasks("https://unpkg.com/@mediapipe/tasks-vision/wasm");
+        console.log('✅ MediaPipe fileset loaded');
+        
+        const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+          },
+          numFaces: 1,
+          runningMode: "VIDEO",
+          outputFacialTransformationMatrixes: true,
+          outputFaceLandmarks: true
+        });
+        
+        console.log('✅ Face landmarker created');
+        loading.textContent = 'All systems working! Move your head to test.';
+        
+        // Simple detection loop
+        let lastTime = 0;
+        async function detect() {
+          const now = performance.now();
+          if (now - lastTime > 100) { // 10 FPS
+            try {
+              const results = await faceLandmarker.detectForVideo(video, now);
+              if (results.facialTransformationMatrixes && results.facialTransformationMatrixes.length > 0) {
+                console.log('✅ Face detected! Matrix:', results.facialTransformationMatrixes[0].data.length, 'values');
+              }
+            } catch (error) {
+              console.log('Detection error (normal during startup):', error.message);
+            }
+            lastTime = now;
+          }
+          requestAnimationFrame(detect);
+        }
+        
+        detect();
+        
+      } catch (error) {
+        console.error('❌ MediaPipe error:', error);
+        loading.textContent = 'MediaPipe error: ' + error.message;
+      }
+    }
+    
+    testMediaPipe();
+  </script>
+</body>
+</html>
+

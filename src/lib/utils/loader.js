@@ -34,7 +34,7 @@ function loader (canvas_id) {
 
   // Load sunglasses model
   loader.load(
-    new URL('@/assets/sun_glasses.glb', import.meta.url).href, 
+    new URL('@/assets/scene.glb', import.meta.url).href, 
     (gltfScene) => {
       model = gltfScene.scene
       modelLoaded = true
