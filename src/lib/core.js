@@ -34,13 +34,15 @@ let fitted = false
 
 // Settings
 let settings_glasses = {
-  baseScaleMultiplier: 1.2,
+  baseScaleMultiplier: 1.3,
   manualRotationY: 0,
   // Local offsets of the glasses relative to the head anchor (in orthographic world units)
   offsetX: 0,
   offsetY: 0,
   offsetZ: -68,
   depthOffset: 100, // Depth offset for glasses positioning
+  // Scale method: 'ipd' (interpupillary distance) or 'bbox' (face bounding box)
+  scaleMethod: 'bbox',
   smoothing: { ...SMOOTHING }
 }
 
@@ -195,6 +197,39 @@ function ipdToModelScale(ipd) {
   return THREE.MathUtils.lerp(0.85, 1.35, t) * settings_glasses.baseScaleMultiplier;
 }
 
+// Alternative scaling using face bounding box dimensions (better for mobile)
+function bboxToModelScale(landmarks) {
+  if (!landmarks || landmarks.length < 2) return 1.0;
+  
+  // Find the bounding box of all face landmarks
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  
+  for (let i = 0; i < landmarks.length; i++) {
+    const point = landmarks[i];
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  }
+  
+  // Calculate face width and height in normalized coordinates
+  const faceWidth = maxX - minX;
+  const faceHeight = maxY - minY;
+  
+  // Use the larger dimension for scaling (more stable)
+  const faceSize = Math.max(faceWidth, faceHeight);
+  
+  // Map face size to model scale
+  // Smaller face (farther from camera) = larger glasses
+  // Larger face (closer to camera) = smaller glasses
+  const minSize = 0.3, maxSize = 0.8; // expected face size range
+  const t = THREE.MathUtils.clamp((faceSize - minSize) / (maxSize - minSize), 0, 1);
+  
+  // Invert the scale: closer face = smaller glasses
+  const invertedT = 1 - t;
+  return THREE.MathUtils.lerp(0.7, 1.4, invertedT) * settings_glasses.baseScaleMultiplier;
+}
+
 // Compute nose target position on the video plane in world coords
 function updateGlassesPosition(landmarks) {
   if (!landmarks || !camera) return null;
@@ -238,6 +273,7 @@ function settings () {
   let sunglassesFolder = gui.addFolder('Sunglasses Positioning')
   
   sunglassesFolder.add(settings_glasses, 'baseScaleMultiplier', 0.1, 5.0, 0.1).name('Base Scale Multiplier')
+  sunglassesFolder.add(settings_glasses, 'scaleMethod', ['ipd', 'bbox']).name('Scale Method')
   sunglassesFolder.add(settings_glasses, 'offsetX', -200, 200, 1).name('Offset X (px)')
   sunglassesFolder.add(settings_glasses, 'offsetY', -200, 200, 1).name('Offset Y (px)')
   sunglassesFolder.add(settings_glasses, 'offsetZ', -100, 100, 1).name('Offset Z')
@@ -281,10 +317,14 @@ async function __RAF () {
       // apply correction (aligns your model's forward/up with head)
       tmpQuat.multiply(correction);
 
-      // 2) scale from IPD (overrides matrix scale for model fit) and anchor position from 2D nose target
+      // 2) scale from selected method (overrides matrix scale for model fit) and anchor position from 2D nose target
       let scale = 1.0;
       if (results.faceLandmarks?.[0]) {
-        scale = ipdToModelScale(interpupillaryDistance(results.faceLandmarks[0]));
+        if (settings_glasses.scaleMethod === 'bbox') {
+          scale = bboxToModelScale(results.faceLandmarks[0]);
+        } else {
+          scale = ipdToModelScale(interpupillaryDistance(results.faceLandmarks[0]));
+        }
         // Compute nose target on video plane and drive anchor position with smoothing
         const targetNose = updateGlassesPosition(results.faceLandmarks[0]);
         if (targetNose) {
