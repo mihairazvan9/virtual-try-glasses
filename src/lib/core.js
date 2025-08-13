@@ -34,15 +34,13 @@ let fitted = false
 
 // Settings
 let settings_glasses = {
-  baseScaleMultiplier: 1.3,
+  baseScaleMultiplier: 2.5, // Increased for better mobile scaling
   manualRotationY: 0,
   // Local offsets of the glasses relative to the head anchor (in orthographic world units)
   offsetX: 0,
   offsetY: 0,
   offsetZ: -68,
   depthOffset: 100, // Depth offset for glasses positioning
-  // Scale method: 'ipd' (interpupillary distance) or 'bbox' (face bounding box)
-  scaleMethod: 'bbox',
   smoothing: { ...SMOOTHING }
 }
 
@@ -105,7 +103,7 @@ function init(canvas_id) {
   window.addEventListener('resize', () => on_window_resize(), false)
   
   // Initialize settings GUI
-  settings()
+  // settings()
   
   connect_ai_camera()
 }
@@ -188,47 +186,48 @@ function interpupillaryDistance(landmarks) {
   return Math.sqrt(dx*dx + dy*dy); // normalized [0..~0.2]
 }
 
-// Map normalized [0..1] video coords into a head-relative scale for your model
-function ipdToModelScale(ipd) {
-  // tune these mapping constants per your glasses model
-  // When the face is close (ipd grows), make the glasses bigger.
-  const min = 0.08, max = 0.18; // expected IPD band in normalized coords
-  const t = THREE.MathUtils.clamp((ipd - min) / (max - min), 0, 1);
-  return THREE.MathUtils.lerp(0.85, 1.35, t) * settings_glasses.baseScaleMultiplier;
-}
-
-// Alternative scaling using face bounding box dimensions (better for mobile)
-function bboxToModelScale(landmarks) {
-  if (!landmarks || landmarks.length < 2) return 1.0;
+// Robust scaling function that works across all devices
+function calculateRobustScale(eyeDistance, videoWidth, videoHeight) {
+  // Base scale from settings
+  let finalScale = settings_glasses.baseScaleMultiplier || 2.4
   
-  // Find the bounding box of all face landmarks
-  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  // 1. DEVICE-ADAPTIVE SCALING: Adjust based on screen/video dimensions
+  // Standard reference: 640x480 = scale 1.0
+  const standardWidth = 640
+  const standardHeight = 480
   
-  for (let i = 0; i < landmarks.length; i++) {
-    const point = landmarks[i];
-    if (point.x < minX) minX = point.x;
-    if (point.x > maxX) maxX = point.x;
-    if (point.y < minY) minY = point.y;
-    if (point.y > maxY) maxY = point.y;
+  // Calculate scale factors for width and height
+  const widthScale = videoWidth / standardWidth
+  const heightScale = videoHeight / standardHeight
+  
+  // Use the smaller scale factor to prevent glasses from being too large
+  const deviceScale = Math.min(widthScale, heightScale)
+  
+  // Apply device scaling with smart limits
+  const deviceScaleFactor = Math.max(0.3, Math.min(2.5, deviceScale))
+  finalScale *= deviceScaleFactor
+  
+  // 2. FACE-PROPORTIONAL SCALING: Adjust based on actual face measurements
+  if (eyeDistance) {
+    // Normalize eye distance to a reasonable range
+    // Standard reference: 0.3 = scale 1.0
+    const standardEyeDistance = 0.3
+    const faceScaleFactor = eyeDistance / standardEyeDistance
+    
+    // Apply face scaling with limits
+    const clampedFaceScale = Math.max(0.6, Math.min(1.8, faceScaleFactor))
+    finalScale *= clampedFaceScale
   }
   
-  // Calculate face width and height in normalized coordinates
-  const faceWidth = maxX - minX;
-  const faceHeight = maxY - minY;
+  // 3. APPLY SMART LIMITS to prevent extreme sizes
+  const minScale = 0.3
+  const maxScale = 5.0
+  finalScale = Math.max(minScale, Math.min(maxScale, finalScale))
   
-  // Use the larger dimension for scaling (more stable)
-  const faceSize = Math.max(faceWidth, faceHeight);
-  
-  // Map face size to model scale
-  // Smaller face (farther from camera) = larger glasses
-  // Larger face (closer to camera) = smaller glasses
-  const minSize = 0.3, maxSize = 0.8; // expected face size range
-  const t = THREE.MathUtils.clamp((faceSize - minSize) / (maxSize - minSize), 0, 1);
-  
-  // Invert the scale: closer face = smaller glasses
-  const invertedT = 1 - t;
-  return THREE.MathUtils.lerp(0.7, 1.4, invertedT) * settings_glasses.baseScaleMultiplier;
+  return finalScale
 }
+
+
 
 // Compute nose target position on the video plane in world coords
 function updateGlassesPosition(landmarks) {
@@ -273,7 +272,6 @@ function settings () {
   let sunglassesFolder = gui.addFolder('Sunglasses Positioning')
   
   sunglassesFolder.add(settings_glasses, 'baseScaleMultiplier', 0.1, 5.0, 0.1).name('Base Scale Multiplier')
-  sunglassesFolder.add(settings_glasses, 'scaleMethod', ['ipd', 'bbox']).name('Scale Method')
   sunglassesFolder.add(settings_glasses, 'offsetX', -200, 200, 1).name('Offset X (px)')
   sunglassesFolder.add(settings_glasses, 'offsetY', -200, 200, 1).name('Offset Y (px)')
   sunglassesFolder.add(settings_glasses, 'offsetZ', -100, 100, 1).name('Offset Z')
@@ -317,14 +315,11 @@ async function __RAF () {
       // apply correction (aligns your model's forward/up with head)
       tmpQuat.multiply(correction);
 
-      // 2) scale from selected method (overrides matrix scale for model fit) and anchor position from 2D nose target
+      // 2) scale using robust device-adaptive scaling and anchor position from 2D nose target
       let scale = 1.0;
       if (results.faceLandmarks?.[0]) {
-        if (settings_glasses.scaleMethod === 'bbox') {
-          scale = bboxToModelScale(results.faceLandmarks[0]);
-        } else {
-          scale = ipdToModelScale(interpupillaryDistance(results.faceLandmarks[0]));
-        }
+        const eyeDistance = interpupillaryDistance(results.faceLandmarks[0]);
+        scale = calculateRobustScale(eyeDistance, video.videoWidth, video.videoHeight);
         // Compute nose target on video plane and drive anchor position with smoothing
         const targetNose = updateGlassesPosition(results.faceLandmarks[0]);
         if (targetNose) {
