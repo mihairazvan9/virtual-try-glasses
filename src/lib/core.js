@@ -76,7 +76,8 @@ const smoothScale = new SmoothedScalar(1);
 const IDX_RIGHT_OUTER = 33;   // right eye outer
 const IDX_LEFT_OUTER  = 263;  // left eye outer
 const IDX_NOSE_TIP    = 4;    // nose tip
-
+const IDX_LEFT_ABOVE = 445;
+const IDX_RIGHT_ABOVE = 225;
 // Temporary objects for calculations
 const tmpMatrix = new THREE.Matrix4();
 const tmpPos = new THREE.Vector3();
@@ -233,8 +234,8 @@ function calculateRobustScale(eyeDistance, videoWidth, videoHeight) {
 function updateGlassesPosition(landmarks) {
   if (!landmarks || !camera) return null;
 
-  const left = landmarks[IDX_LEFT_OUTER];
-  const right = landmarks[IDX_RIGHT_OUTER];
+  const left = landmarks[IDX_LEFT_ABOVE];
+  const right = landmarks[IDX_RIGHT_ABOVE];
   if (!left || !right) return null;
 
   // Anchor at approximate nose bridge: midpoint between outer eye corners, nudged downward by a fraction of IPD
