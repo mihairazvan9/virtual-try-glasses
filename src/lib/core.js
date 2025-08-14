@@ -17,7 +17,7 @@ import * as Detect from '@/lib/utils/ai/detections'
 
 // ---------- config ----------
 const VIDEO_W = 1280, VIDEO_H = 720;
-const SMOOTHING = { pos: 0.35, rot: 0.35, scale: 0.35 }; // [0..1], higher = snappier
+const SMOOTHING = { pos: 0.35, rot: 0.35, scale: 0.35, rotationCompensation: 0.25 }; // [0..1], higher = snappier
 const TARGET_FPS = 60;
 
 let camera, scene, renderer, canvas
@@ -41,6 +41,10 @@ let settings_glasses = {
   offsetY: 0,
   offsetZ: 40,
   depthOffset: 80, // Depth offset for glasses positioning
+  // Head rotation compensation settings
+  rotationCompensationEnabled: true, // Enable/disable rotation compensation
+  rotationCompensationStrength: 0.4, // How much to compensate for rotation (0.0 to 2.0)
+  rotationCompensationThreshold: 0.1, // Minimum rotation angle to start compensation
   smoothing: { ...SMOOTHING }
 }
 
@@ -68,9 +72,16 @@ class SmoothedScalar {
   lerp(a, b, t) { return a + (b - a) * t; }
 }
 
+class SmoothedRotationCompensation {
+  constructor(){ this.compensation = 1.0; }
+  to(target, alpha){ this.compensation = this.lerp(this.compensation, target, alpha); }
+  lerp(a, b, t) { return a + (b - a) * t; }
+}
+
 const smoothPos = new SmoothedVec3(0,0,0);
 const smoothRot = new SmoothedQuat();
 const smoothScale = new SmoothedScalar(1);
+const smoothRotationCompensation = new SmoothedRotationCompensation();
 
 // Indices for key points (MediaPipe FaceMesh canonical)
 const IDX_RIGHT_OUTER = 33;   // right eye outer
@@ -187,8 +198,8 @@ function interpupillaryDistance(landmarks) {
   return Math.sqrt(dx*dx + dy*dy); // normalized [0..~0.2]
 }
 
-// Robust scaling function that works across all devices
-function calculateRobustScale(eyeDistance, videoWidth, videoHeight) {
+// Robust scaling function that works across all devices and head rotations
+function calculateRobustScale(eyeDistance, videoWidth, videoHeight, headRotationY = 0) {
   // Base scale from settings
   let finalScale = settings_glasses.baseScaleMultiplier || 2.4
   
@@ -220,7 +231,34 @@ function calculateRobustScale(eyeDistance, videoWidth, videoHeight) {
     finalScale *= clampedFaceScale
   }
   
-  // 3. APPLY SMART LIMITS to prevent extreme sizes
+  // 3. HEAD ROTATION COMPENSATION: Adjust scale based on head rotation
+  // When head is rotated (profile view), compensate for perspective distortion
+  if (settings_glasses.rotationCompensationEnabled && 
+      Math.abs(headRotationY) > settings_glasses.rotationCompensationThreshold) {
+    
+    // Calculate rotation compensation factor using sine-based approach for smoother scaling
+    // This provides more natural compensation that increases as rotation approaches 90 degrees
+    const rotationRadians = Math.abs(headRotationY)
+    const targetCompensation = 1.0 + (Math.sin(rotationRadians) * settings_glasses.rotationCompensationStrength)
+    
+    // Apply smoothed rotation compensation
+    smoothRotationCompensation.to(targetCompensation, settings_glasses.smoothing.rotationCompensation)
+    const clampedRotationCompensation = Math.max(1.0, Math.min(2.0, smoothRotationCompensation.compensation))
+    finalScale *= clampedRotationCompensation
+    
+    // console.log('Head rotation compensation:', {
+    //   rotationY: headRotationY,
+    //   rotationRadians: rotationRadians,
+    //   targetCompensation: targetCompensation,
+    //   smoothedCompensation: clampedRotationCompensation,
+    //   finalScale: finalScale
+    // })
+  } else if (!settings_glasses.rotationCompensationEnabled) {
+    // Reset rotation compensation when disabled
+    smoothRotationCompensation.to(1.0, 0.1)
+  }
+  
+  // 4. APPLY SMART LIMITS to prevent extreme sizes
   const minScale = 0.3
   const maxScale = 5.0
   finalScale = Math.max(minScale, Math.min(maxScale, finalScale))
@@ -278,6 +316,13 @@ function settings () {
   sunglassesFolder.add(settings_glasses, 'offsetZ', -100, 100, 1).name('Offset Z')
   sunglassesFolder.add(settings_glasses, 'depthOffset', -100, 100, 1).name('Depth Offset')
   
+  // Head rotation compensation settings
+  sunglassesFolder.add(settings_glasses, 'rotationCompensationEnabled').name('Enable Rotation Compensation')
+  sunglassesFolder.add(settings_glasses, 'rotationCompensationStrength', 0.0, 2.0, 0.1).name('Rotation Compensation Strength')
+  sunglassesFolder.add(settings_glasses, 'rotationCompensationThreshold', 0.0, 0.5, 0.01).name('Rotation Threshold')
+  sunglassesFolder.add(settings_glasses.smoothing, 'rotationCompensation', 0.1, 0.9, 0.05).name('Rotation Compensation Smoothing')
+  
+ 
   let smoothingFolder = gui.addFolder('Smoothing')
   smoothingFolder.add(settings_glasses.smoothing, 'pos', 0.1, 0.9, 0.05).name('Position Smoothing')
   smoothingFolder.add(settings_glasses.smoothing, 'rot', 0.1, 0.9, 0.05).name('Rotation Smoothing')
@@ -320,7 +365,27 @@ async function __RAF () {
       let scale = 1.0;
       if (results.faceLandmarks?.[0]) {
         const eyeDistance = interpupillaryDistance(results.faceLandmarks[0]);
-        scale = calculateRobustScale(eyeDistance, video.videoWidth, video.videoHeight);
+        
+        // Extract head rotation from the facial transformation matrix
+        // Convert quaternion to euler angles to get Y rotation (head turning left/right)
+        const headEuler = new THREE.Euler().setFromQuaternion(tmpQuat);
+        const headRotationY = headEuler.y; // This represents head turning left/right
+        
+        // // Debug: Log rotation information
+        // if (Math.abs(headRotationY) > 0.1) {
+        //   const rotationDegrees = (headRotationY * 180 / Math.PI).toFixed(1)
+        //   const isProfileView = Math.abs(headRotationY) > 0.5 // More than ~30 degrees
+          
+        //   console.log(`Head rotation: ${rotationDegrees}° ${isProfileView ? '(PROFILE VIEW)' : '(Slight turn)'}`, {
+        //     yaw: headRotationY,
+        //     degrees: rotationDegrees,
+        //     eyeDistance: eyeDistance,
+        //     compensationEnabled: settings_glasses.rotationCompensationEnabled
+        //   });
+        // }
+        
+        scale = calculateRobustScale(eyeDistance, video.videoWidth, video.videoHeight, headRotationY);
+        
         // Compute nose target on video plane and drive anchor position with smoothing
         const targetNose = updateGlassesPosition(results.faceLandmarks[0]);
         if (targetNose) {
