@@ -39,8 +39,8 @@ let settings_glasses = {
   // Local offsets of the glasses relative to the head anchor (in orthographic world units)
   offsetX: 0,
   offsetY: 0,
-  offsetZ: -68,
-  depthOffset: 100, // Depth offset for glasses positioning
+  offsetZ: 40,
+  depthOffset: 80, // Depth offset for glasses positioning
   smoothing: { ...SMOOTHING }
 }
 
@@ -104,7 +104,7 @@ function init(canvas_id) {
   window.addEventListener('resize', () => on_window_resize(), false)
   
   // Initialize settings GUI
-  // settings()
+  settings()
   
   connect_ai_camera()
 }
@@ -337,13 +337,18 @@ async function __RAF () {
       anchor.quaternion.copy(smoothRot.q);
       anchor.scale.setScalar(smoothScale.s);
       
+      // Apply depth offset to anchor position in world space (before rotation)
+      // Reset to base position first, then add depth offset
+      anchor.position.copy(smoothPos.v);
+      anchor.position.z += settings_glasses.depthOffset;
+      
       // Apply manual Y rotation override
       if (sunglassesModel) {
         // Apply local offsets so the frame can be aligned to ears and nose
         sunglassesModel.position.set(
           settings_glasses.offsetX,
           settings_glasses.offsetY,
-          settings_glasses.offsetZ + settings_glasses.depthOffset
+          settings_glasses.offsetZ
         );
         sunglassesModel.rotation.y = settings_glasses.manualRotationY;
       }
