@@ -23,13 +23,18 @@ async function add_web_camera() {
       
       // Ensure the video dimensions are available
       const texture = new THREE.VideoTexture(video_source)
-      texture.colorSpace = THREE.SRGBColorSpace
+      texture.minFilter = THREE.LinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.format = THREE.RGBAFormat
       
-      // Enable texture updates
-      texture.needsUpdate = true
+      console.log('Created video texture:', {
+        texture: texture,
+        video: video_source,
+        videoReady: video_source.readyState,
+        videoWidth: video_source.videoWidth,
+        videoHeight: video_source.videoHeight
+      })
 
-      // Create geometry that matches the video dimensions
-      // Use the actual video dimensions to ensure proper visibility
       const geometry = new THREE.PlaneGeometry(
         video_source.videoWidth,
         video_source.videoHeight
@@ -38,17 +43,19 @@ async function add_web_camera() {
       const material = new THREE.MeshBasicMaterial({
         map: texture,
         side: THREE.DoubleSide,
-        // transparent: true,
-        // alphaTest: 0.1
+        transparent: true,
+        alphaTest: 0.1
       })
 
       const mesh = new THREE.Mesh(geometry, material)
-      mesh.rotation.y = Math.PI 
+      mesh.rotation.y = Math.PI
       
       console.log('Created video mesh:', {
         geometry: geometry.parameters,
         material: material,
-        mesh: mesh
+        mesh: mesh,
+        texture: texture,
+        videoElement: video_source
       })
       
       resolve({ mesh, video_source })
@@ -93,6 +100,44 @@ async function add_web_camera() {
         .then(stream => {
           video_source.srcObject = stream
           video_source.style.transform = 'scaleX(-1)';
+          
+          // Ensure video plays and is visible
+          video_source.play().then(() => {
+            console.log('Video started playing successfully')
+            console.log('Video element:', {
+              srcObject: video_source.srcObject,
+              readyState: video_source.readyState,
+              videoWidth: video_source.videoWidth,
+              videoHeight: video_source.videoHeight,
+              paused: video_source.paused,
+              currentTime: video_source.currentTime
+            })
+            
+            // Test: Make video element visible temporarily for debugging
+            video_source.style.display = 'block'
+            video_source.style.position = 'absolute'
+            video_source.style.top = '10px'
+            video_source.style.left = '10px'
+            video_source.style.width = '200px'
+            video_source.style.height = '150px'
+            video_source.style.zIndex = '9999'
+            video_source.style.border = '2px solid red'
+            
+            // Remove the test styling after 5 seconds
+            setTimeout(() => {
+              video_source.style.display = 'none'
+              video_source.style.position = ''
+              video_source.style.top = ''
+              video_source.style.left = ''
+              video_source.style.width = ''
+              video_source.style.height = ''
+              video_source.style.zIndex = ''
+              video_source.style.border = ''
+            }, 5000)
+            
+          }).catch(error => {
+            console.error('Error playing video:', error)
+          })
         })
 
         .catch(error => {

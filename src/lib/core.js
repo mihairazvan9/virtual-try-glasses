@@ -147,7 +147,30 @@ async function connect_ai_camera () {
       parent: mesh.parent
     })
 
-   
+    // Add a fallback colored plane to ensure something is visible
+    const fallbackGeometry = new THREE.PlaneGeometry(640, 480)
+    const fallbackMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x00ff00, 
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.5
+    })
+    const fallbackMesh = new THREE.Mesh(fallbackGeometry, fallbackMaterial)
+    fallbackMesh.position.set(0, 0, -1) // Behind the video plane
+    scene.add(fallbackMesh)
+    console.log('Added fallback green plane for debugging')
+
+    // Add a simple test plane to verify the scene is working
+    const testGeometry = new THREE.PlaneGeometry(100, 100)
+    const testMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0xff0000, 
+      side: THREE.DoubleSide 
+    })
+    const testMesh = new THREE.Mesh(testGeometry, testMaterial)
+    testMesh.position.set(0, 0, 10) // In front of the video plane
+    scene.add(testMesh)
+    console.log('Added test red plane for debugging')
+
     // Log all scene children to verify everything is added
     console.log('Scene children after adding video:', scene.children.map(child => ({
       type: child.type,
@@ -424,6 +447,24 @@ async function __RAF () {
       // Run the model at video frametimestamps for better sync
       results = await face_landmarker.detectForVideo(canvas_video, current_time)
       ctx.restore()
+      
+      // Ensure video texture is updated
+      if (video && video.readyState >= 2) {
+        scene.children.forEach(child => {
+          if (child.material && child.material.map && child.material.map.isVideoTexture) {
+            child.material.map.needsUpdate = true
+            // Debug: Log texture updates (occasional)
+            if (Math.random() < 0.01) {
+              console.log('Updating video texture:', {
+                texture: child.material.map,
+                videoReady: video.readyState,
+                videoTime: video.currentTime,
+                textureNeedsUpdate: child.material.map.needsUpdate
+              })
+            }
+          }
+        })
+      }
     }
 
     if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length) {
