@@ -104,7 +104,7 @@ function init(canvas_id) {
   window.addEventListener('resize', () => on_window_resize(), false)
   
   // Initialize settings GUI
-  settings()
+  // settings()
   
   connect_ai_camera()
 }
