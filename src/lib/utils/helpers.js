@@ -26,14 +26,23 @@ function init_ortografic_camera ({
   const near_plane = -1000
   const far_plane = 1000
 
+  // Calculate aspect ratio to ensure proper scaling
+  const aspectRatio = width / height
+  
+  // Set up orthographic camera bounds to properly view the video plane
+  // The video plane will be centered at (0,0,0) with the given dimensions
   const camera = new THREE.OrthographicCamera(
-    width / - 2, 
-    width / 2, 
-    height / 2, 
-    height / - 2, 
+    -width / 2,    // left
+    width / 2,     // right
+    height / 2,    // top
+    -height / 2,   // bottom
     near_plane, 
     far_plane
   )
+
+  // Store the aspect ratio for potential adjustments
+  camera.aspectRatio = aspectRatio
+  camera.userData = { originalWidth: width, originalHeight: height }
 
   return camera
 

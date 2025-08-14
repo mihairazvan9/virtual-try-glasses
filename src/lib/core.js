@@ -114,6 +114,15 @@ function init(canvas_id) {
   
   window.addEventListener('resize', () => on_window_resize(), false)
   
+  // Add orientation change handling for mobile devices
+  window.addEventListener('orientationchange', () => {
+    console.log('Orientation changed:', window.orientation)
+    // Wait for orientation change to complete, then resize
+    setTimeout(() => {
+      on_window_resize()
+    }, 100)
+  })
+  
   // Initialize settings GUI
   // settings()
   
@@ -123,30 +132,94 @@ function init(canvas_id) {
 async function connect_ai_camera () {
   try {
     const { mesh, video_source } = await add_web_camera()
+    
+    // Position the video mesh properly in the scene
+    mesh.position.set(0, 0, 0)
     scene.add(mesh)
     video = video_source
+
+    // Debug: Log the mesh details
+    console.log('Video mesh added to scene:', {
+      geometry: mesh.geometry,
+      material: mesh.material,
+      position: mesh.position,
+      visible: mesh.visible,
+      parent: mesh.parent
+    })
+
+   
+    // Log all scene children to verify everything is added
+    console.log('Scene children after adding video:', scene.children.map(child => ({
+      type: child.type,
+      position: child.position,
+      visible: child.visible,
+      material: child.material ? child.material.type : 'no material'
+    })))
 
     // Create secondary canvas to flip video
     canvas_video = document.createElement('canvas')
     ctx = canvas_video.getContext('2d')
     
+    // Set canvas dimensions to match video dimensions exactly
     canvas_video.width = video.videoWidth
     canvas_video.height = video.videoHeight
 
-    // Update camera for video dimensions
+    // Calculate aspect ratio for proper camera setup
+    const videoAspectRatio = video.videoWidth / video.videoHeight
+    
+    // Update camera for video dimensions with proper aspect ratio handling
     camera = Helpers.init_ortografic_camera({ 
       width: video.videoWidth, 
       height: video.videoHeight
     })
     
-    camera.position.set(0, 0, 10)
+    // Position camera to properly view the video plane
+    // The video plane is at (0,0,0) with dimensions videoWidth x videoHeight
+    // Position camera at a reasonable distance to see the entire plane
+    camera.position.set(0, 0, 500)
     camera.lookAt(0, 0, 0)
+    
+    // Ensure the camera bounds match the video dimensions exactly
+    const halfWidth = video.videoWidth / 2
+    const halfHeight = video.videoHeight / 2
+    camera.left = -halfWidth
+    camera.right = halfWidth
+    camera.top = halfHeight
+    camera.bottom = -halfHeight
+    camera.updateProjectionMatrix()
+    
+    // Set the main canvas size to exactly match the video dimensions
+    if (canvas) {
+      canvas.style.width = video.videoWidth + 'px'
+      canvas.style.height = video.videoHeight + 'px'
+      renderer.setSize(video.videoWidth, video.videoHeight)
+      console.log('Canvas size set to match video:', {
+        canvasWidth: canvas.style.width,
+        canvasHeight: canvas.style.height,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight
+      })
+    }
     
     console.log('Camera setup:', {
       position: camera.position,
       width: video.videoWidth,
       height: video.videoHeight,
-      cameraType: camera.type
+      aspectRatio: videoAspectRatio,
+      cameraType: camera.type,
+      videoGeometry: {
+        width: mesh.geometry.parameters.width,
+        height: mesh.geometry.parameters.height
+      },
+      meshPosition: mesh.position,
+      cameraBounds: {
+        left: camera.left,
+        right: camera.right,
+        top: camera.top,
+        bottom: camera.bottom
+      },
+      cameraNear: camera.near,
+      cameraFar: camera.far
     })
 
     // Initialize face landmarker
@@ -428,13 +501,91 @@ async function __RAF () {
 }
 
 function render () {
-  renderer.renderAsync(scene, camera);
+  // Debug: Log render calls
+  // if (video && video.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+    // console.log('Rendering frame:', {
+    //   videoReady: video.readyState,
+    //   videoWidth: video.videoWidth,
+    //   videoHeight: video.videoHeight,
+    //   sceneChildren: scene.children.length,
+    //   cameraPosition: camera.position,
+    //   cameraType: camera.type,
+    //   rendererSize: {
+    //     width: renderer.domElement.width,
+    //     height: renderer.domElement.height
+    //   }
+    // })
+  // }
+  
+  // Ensure the scene is being rendered
+  if (scene && camera && renderer) {
+    renderer.renderAsync(scene, camera);
+  } else {
+    console.error('Render failed: missing scene, camera, or renderer:', {
+      scene: !!scene,
+      camera: !!camera,
+      renderer: !!renderer
+    })
+  }
 }
 
 function on_window_resize() {
-  camera.aspect = canvas.offsetWidth / canvas.offsetHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(canvas.offsetWidth, canvas.offsetHeight)
+  // Get the current canvas dimensions
+  const canvasWidth = canvas.offsetWidth
+  const canvasHeight = canvas.offsetHeight
+  
+  // Update camera aspect ratio if it's a perspective camera
+  if (camera.type === 'PerspectiveCamera') {
+    camera.aspect = canvasWidth / canvasHeight
+    camera.updateProjectionMatrix()
+  }
+  
+  // For orthographic camera, maintain the original video aspect ratio
+  if (camera.type === 'OrthographicCamera' && video) {
+    const videoAspectRatio = video.videoWidth / video.videoHeight
+    const canvasAspectRatio = canvasWidth / canvasHeight
+    
+    let newWidth, newHeight
+    
+    if (canvasAspectRatio > videoAspectRatio) {
+      // Canvas is wider than video - fit to height
+      newHeight = canvasHeight
+      newWidth = canvasHeight * videoAspectRatio
+    } else {
+      // Canvas is taller than video - fit to width
+      newWidth = canvasWidth
+      newHeight = canvasWidth / videoAspectRatio
+    }
+    
+    // Update orthographic camera bounds to maintain video aspect ratio
+    camera.left = -newWidth / 2
+    camera.right = newWidth / 2
+    camera.top = newHeight / 2
+    camera.bottom = -newHeight / 2
+    camera.updateProjectionMatrix()
+  }
+  
+  // Update renderer size to match canvas dimensions
+  renderer.setSize(canvasWidth, canvasHeight)
+  
+  // Ensure canvas maintains exact video dimensions
+  if (video && video.videoWidth && video.videoHeight) {
+    // Set canvas style to match video dimensions exactly
+    canvas.style.width = video.videoWidth + 'px'
+    canvas.style.height = video.videoHeight + 'px'
+    
+    // Update renderer to match video dimensions
+    renderer.setSize(video.videoWidth, video.videoHeight)
+    
+    console.log('Canvas resized to match video exactly:', {
+      canvasStyleWidth: canvas.style.width,
+      canvasStyleHeight: canvas.style.height,
+      rendererWidth: renderer.domElement.width,
+      rendererHeight: renderer.domElement.height,
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight
+    })
+  }
 }
 
 export { init, scene, camera, renderer, canvas, makeResetFunctionGlobal }
